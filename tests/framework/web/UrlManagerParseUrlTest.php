@@ -418,17 +418,18 @@ class UrlManagerParseUrlTest extends TestCase
             'rules' => ['post/<id:\d+>' => 'post/view'],
             'cache' => $arrayCache,
         ]);
+        $manager->rules;
 
-        $savedRules = $manager->rules;
         // save rules to "cache" and make sure it is reused
-        $arrayCache->expects($this->exactly(2))->method('get')->willReturn($savedRules);
+        $arrayCache->expects($this->exactly(4))->method('get')->willReturn([]);
         $arrayCache->expects($this->never())->method('set');
 
         for ($i = 0; $i < 2; $i++) {
-            $this->getUrlManager([
+            $manager = $this->getUrlManager([
                 'rules' => ['post/<id:\d+>' => 'post/view'],
                 'cache' => $arrayCache,
             ]);
+            $manager->rules;
         }
     }
 
