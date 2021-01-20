@@ -122,6 +122,9 @@ class QueryBuilder extends \yii\db\QueryBuilder
         $sql = preg_replace('/^([\s(])*SELECT(\s+DISTINCT)?(?!\s*TOP\s*\()/i', "\\1SELECT\\2 rowNum = ROW_NUMBER() over ($orderBy),", $sql);
 
         if ($this->hasLimit($limit)) {
+            if ($limit instanceof Expression) {
+                $limit = '('. (string)$limit . ')';
+            }
             $sql = "SELECT TOP $limit * FROM ($sql) sub";
         } else {
             $sql = "SELECT * FROM ($sql) sub";
@@ -475,22 +478,32 @@ class QueryBuilder extends \yii\db\QueryBuilder
         $version2005orLater = version_compare($this->db->getSchema()->getServerVersion(), '9', '>=');
 
         list($names, $placeholders, $values, $params) = $this->prepareInsertValues($table, $columns, $params);
-
-        $sql = 'INSERT INTO ' . $this->db->quoteTableName($table)
-            . (!empty($names) ? ' (' . implode(', ', $names) . ')' : '')
-            . ($version2005orLater ? ' OUTPUT INSERTED.* INTO @temporary_inserted' : '')
-            . (!empty($placeholders) ? ' VALUES (' . implode(', ', $placeholders) . ')' : $values);
-
         if ($version2005orLater) {
             $schema = $this->db->getTableSchema($table);
             $cols = [];
+            $columns = [];
             foreach ($schema->columns as $column) {
-                $cols[] = $this->db->quoteColumnName($column->name) . ' '
+                if ($column->isComputed) {
+                    continue;
+                }
+                $quoteColumnName = $this->db->quoteColumnName($column->name);
+                $cols[] = $quoteColumnName . ' '
                     . $column->dbType
                     . (in_array($column->dbType, ['char', 'varchar', 'nchar', 'nvarchar', 'binary', 'varbinary']) ? "(MAX)" : "")
                     . ' ' . ($column->allowNull ? "NULL" : "");
+                $columns[] = 'INSERTED.' . $quoteColumnName;
             }
-            $sql = "SET NOCOUNT ON;DECLARE @temporary_inserted TABLE (" . implode(", ", $cols) . ");" . $sql . ";SELECT * FROM @temporary_inserted";
+        }
+        $countColumns = count($columns);
+
+        $sql = 'INSERT INTO ' . $this->db->quoteTableName($table)
+            . (!empty($names) ? ' (' . implode(', ', $names) . ')' : '')
+            . (($version2005orLater && $countColumns) ? ' OUTPUT ' . implode(',', $columns) . ' INTO @temporary_inserted' : '')
+            . (!empty($placeholders) ? ' VALUES (' . implode(', ', $placeholders) . ')' : $values);
+
+        if ($version2005orLater && $countColumns) {
+            $sql = 'SET NOCOUNT ON;DECLARE @temporary_inserted TABLE (' . implode(', ', $cols) . ');' . $sql .
+                ';SELECT * FROM @temporary_inserted';
         }
 
         return $sql;
@@ -525,8 +538,18 @@ class QueryBuilder extends \yii\db\QueryBuilder
         }
         $on = $this->buildCondition($onCondition, $params);
         list(, $placeholders, $values, $params) = $this->prepareInsertValues($table, $insertColumns, $params);
+
+        /**
+         * Fix number of select query params for old MSSQL version that does not support offset correctly.
+         * @see QueryBuilder::oldBuildOrderByAndLimit
+         */
+        $insertNamesUsing = $insertNames;
+        if (strstr($values, 'rowNum = ROW_NUMBER()') !== false) {
+            $insertNamesUsing = array_merge(['[rowNum]'], $insertNames);
+        }
+
         $mergeSql = 'MERGE ' . $this->db->quoteTableName($table) . ' WITH (HOLDLOCK) '
-            . 'USING (' . (!empty($placeholders) ? 'VALUES (' . implode(', ', $placeholders) . ')' : ltrim($values, ' ')) . ') AS [EXCLUDED] (' . implode(', ', $insertNames) . ') '
+            . 'USING (' . (!empty($placeholders) ? 'VALUES (' . implode(', ', $placeholders) . ')' : ltrim($values, ' ')) . ') AS [EXCLUDED] (' . implode(', ', $insertNamesUsing) . ') '
             . "ON ($on)";
         $insertValues = [];
         foreach ($insertNames as $name) {
