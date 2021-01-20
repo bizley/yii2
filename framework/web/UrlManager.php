@@ -12,6 +12,7 @@ use yii\base\Component;
 use yii\base\InvalidConfigException;
 use yii\caching\CacheInterface;
 use yii\di\Instance;
+use yii\helpers\ArrayHelper;
 use yii\helpers\Url;
 
 /**
@@ -63,46 +64,6 @@ class UrlManager extends Component
      * This property is used only when [[enablePrettyUrl]] is `true`.
      */
     public $enableStrictParsing = false;
-    /**
-     * @var array the rules for creating and parsing URLs when [[enablePrettyUrl]] is `true`.
-     * This property is used only if [[enablePrettyUrl]] is `true`. Each element in the array
-     * is the configuration array for creating a single URL rule. The configuration will
-     * be merged with [[ruleConfig]] first before it is used for creating the rule object.
-     *
-     * A special shortcut format can be used if a rule only specifies [[UrlRule::pattern|pattern]]
-     * and [[UrlRule::route|route]]: `'pattern' => 'route'`. That is, instead of using a configuration
-     * array, one can use the key to represent the pattern and the value the corresponding route.
-     * For example, `'post/<id:\d+>' => 'post/view'`.
-     *
-     * For RESTful routing the mentioned shortcut format also allows you to specify the
-     * [[UrlRule::verb|HTTP verb]] that the rule should apply for.
-     * You can do that  by prepending it to the pattern, separated by space.
-     * For example, `'PUT post/<id:\d+>' => 'post/update'`.
-     * You may specify multiple verbs by separating them with comma
-     * like this: `'POST,PUT post/index' => 'post/create'`.
-     * The supported verbs in the shortcut format are: GET, HEAD, POST, PUT, PATCH and DELETE.
-     * Note that [[UrlRule::mode|mode]] will be set to PARSING_ONLY when specifying verb in this way
-     * so you normally would not specify a verb for normal GET request.
-     *
-     * Here is an example configuration for RESTful CRUD controller:
-     *
-     * ```php
-     * [
-     *     'dashboard' => 'site/index',
-     *
-     *     'POST <controller:[\w-]+>' => '<controller>/create',
-     *     '<controller:[\w-]+>s' => '<controller>/index',
-     *
-     *     'PUT <controller:[\w-]+>/<id:\d+>'    => '<controller>/update',
-     *     'DELETE <controller:[\w-]+>/<id:\d+>' => '<controller>/delete',
-     *     '<controller:[\w-]+>/<id:\d+>'        => '<controller>/view',
-     * ];
-     * ```
-     *
-     * Note that if you modify this property after the UrlManager object is created, make sure
-     * you populate the array with rule objects instead of rule configurations.
-     */
-    public $rules = [];
     /**
      * @var string the URL suffix used when [[enablePrettyUrl]] is `true`.
      * For example, ".html" can be used so that the URL looks like pointing to a static HTML page.
@@ -166,6 +127,9 @@ class UrlManager extends Component
     private $_scriptUrl;
     private $_hostInfo;
     private $_ruleCache;
+    private $_rules;
+    private $_rulesDefinitions = [];
+    private $_rulesBuilt = false;
 
 
     /**
@@ -192,10 +156,72 @@ class UrlManager extends Component
                 Yii::warning('Unable to use cache for URL manager: ' . $e->getMessage());
             }
         }
-        if (empty($this->rules)) {
-            return;
+    }
+
+    /**
+     * @param array $rules for creating and parsing URLs when [[enablePrettyUrl]] is `true`.
+     * [[rules]] property is used only if [[enablePrettyUrl]] is `true`. Each element in the array
+     * should be the configuration array for creating a single URL rule. The configuration will
+     * be merged with [[ruleConfig]] first before it is used for creating the rule object.
+     *
+     * A special shortcut format can be used if a rule only specifies [[UrlRule::pattern|pattern]]
+     * and [[UrlRule::route|route]]: `'pattern' => 'route'`. That is, instead of using a configuration
+     * array, one can use the key to represent the pattern and the value the corresponding route.
+     * For example, `'post/<id:\d+>' => 'post/view'`.
+     *
+     * For RESTful routing the mentioned shortcut format also allows you to specify the
+     * [[UrlRule::verb|HTTP verb]] that the rule should apply for.
+     * You can do that  by prepending it to the pattern, separated by space.
+     * For example, `'PUT post/<id:\d+>' => 'post/update'`.
+     * You may specify multiple verbs by separating them with comma
+     * like this: `'POST,PUT post/index' => 'post/create'`.
+     * The supported verbs in the shortcut format are: GET, HEAD, POST, PUT, PATCH and DELETE.
+     * Note that [[UrlRule::mode|mode]] will be set to PARSING_ONLY when specifying verb in this way
+     * so you normally would not specify a verb for normal GET request.
+     *
+     * Here is an example configuration for RESTful CRUD controller:
+     *
+     * ```php
+     * [
+     *     'dashboard' => 'site/index',
+     *
+     *     'POST <controller:[\w-]+>' => '<controller>/create',
+     *     '<controller:[\w-]+>s' => '<controller>/index',
+     *
+     *     'PUT <controller:[\w-]+>/<id:\d+>'    => '<controller>/update',
+     *     'DELETE <controller:[\w-]+>/<id:\d+>' => '<controller>/delete',
+     *     '<controller:[\w-]+>/<id:\d+>'        => '<controller>/view',
+     * ];
+     * ```
+     * @since 2.0.41
+     */
+    public function setRules($rules)
+    {
+        $this->_rulesDefinitions = $rules;
+        $this->_rulesBuilt = false;
+    }
+
+    /**
+     * Returns the list of rules built with the prepared configuration.
+     * @return array
+     * @since 2.0.41
+     */
+    public function getRules()
+    {
+        if (!$this->enablePrettyUrl) {
+            return $this->_rulesDefinitions;
         }
-        $this->rules = $this->buildRules($this->rules);
+
+        if ($this->_rulesBuilt === false) {
+            $this->_rules = null;
+        }
+
+        if ($this->_rules === null) {
+            $this->_rules = $this->buildRules($this->_rulesDefinitions);
+            $this->_rulesBuilt = true;
+        }
+
+        return $this->_rules;
     }
 
     /**
@@ -215,11 +241,11 @@ class UrlManager extends Component
         if (!$this->enablePrettyUrl) {
             return;
         }
-        $rules = $this->buildRules($rules);
+
         if ($append) {
-            $this->rules = array_merge($this->rules, $rules);
+            $this->setRules(array_merge($this->_rulesDefinitions, $rules));
         } else {
-            $this->rules = array_merge($rules, $this->rules);
+            $this->setRules(array_merge($rules, $this->_rulesDefinitions));
         }
     }
 
@@ -227,51 +253,115 @@ class UrlManager extends Component
      * Builds URL rule objects from the given rule declarations.
      *
      * @param array $ruleDeclarations the rule declarations. Each array element represents a single rule declaration.
-     * Please refer to [[rules]] for the acceptable rule formats.
+     * Please refer to [[setRules]] for the acceptable rule formats.
      * @return UrlRuleInterface[] the rule objects built from the given rule declarations
      * @throws InvalidConfigException if a rule declaration is invalid
      */
     protected function buildRules($ruleDeclarations)
     {
-        $builtRules = $this->getBuiltRulesFromCache($ruleDeclarations);
-        if ($builtRules !== false) {
-            return $builtRules;
-        }
-
         $builtRules = [];
-        $verbs = 'GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS';
-        foreach ($ruleDeclarations as $key => $rule) {
-            if (is_string($rule)) {
-                $rule = ['route' => $rule];
-                if (preg_match("/^((?:($verbs),)*($verbs))\\s+(.*)$/", $key, $matches)) {
-                    $rule['verb'] = explode(',', $matches[1]);
-                    // rules that are not applicable for GET requests should not be used to create URLs
-                    if (!in_array('GET', $rule['verb'], true)) {
-                        $rule['mode'] = UrlRule::PARSING_ONLY;
-                    }
-                    $key = $matches[4];
-                }
-                $rule['pattern'] = $key;
-            }
-            if (is_array($rule)) {
-                $rule = Yii::createObject(array_merge($this->ruleConfig, $rule));
-            }
-            if (!$rule instanceof UrlRuleInterface) {
-                throw new InvalidConfigException('URL rule class must implement UrlRuleInterface.');
-            }
-            $builtRules[] = $rule;
-        }
 
-        $this->setBuiltRulesCache($ruleDeclarations, $builtRules);
+        foreach ($ruleDeclarations as $pattern => $rule) {
+            if (is_object($rule)) {
+                if (!$rule instanceof UrlRuleInterface) {
+                    throw new InvalidConfigException('URL rule class must implement UrlRuleInterface.');
+                }
+
+                // no point for caching since rule declaration is object itself already
+                $builtRules[] = $rule;
+                continue;
+            }
+
+            $builtRules[] = $this->buildRule($pattern, $rule);
+        }
 
         return $builtRules;
+    }
+
+    private function buildRule($pattern, $ruleDeclaration)
+    {
+        if (is_array($ruleDeclaration)) {
+            $ruleBlueprint = $ruleDeclaration;
+        } else {
+            $ruleBlueprint = [$pattern => $ruleDeclaration];
+        }
+
+        $builtRule = $this->getBuiltRuleFromCache($ruleBlueprint);
+        if ($builtRule !== false) {
+            $builtFastParseData = $this->getBuiltFastParseDataFromCache($ruleBlueprint);
+            if ($builtFastParseData === false) {
+                $this->buildFastParseData($ruleBlueprint, $builtRule);
+            }
+
+            return $builtRule;
+        }
+
+        if (is_string($ruleDeclaration)) {
+            $verbs = 'GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS';
+            $ruleDeclaration = ['route' => $ruleDeclaration];
+            if (preg_match("/^((?:($verbs),)*($verbs))\\s+(.*)$/", $pattern, $matches)) {
+                $ruleDeclaration['verb'] = explode(',', $matches[1]);
+                // rules that are not applicable for GET requests should not be used to create URLs
+                if (!in_array('GET', $ruleDeclaration['verb'], true)) {
+                    $ruleDeclaration['mode'] = UrlRule::PARSING_ONLY;
+                }
+                $pattern = $matches[4];
+            }
+            $ruleDeclaration['pattern'] = $pattern;
+        }
+        if (is_array($ruleDeclaration)) {
+            $builtRule = Yii::createObject(array_merge($this->ruleConfig, $ruleDeclaration));
+        }
+        if (!$builtRule instanceof UrlRuleInterface) {
+            throw new InvalidConfigException('URL rule class must implement UrlRuleInterface.');
+        }
+
+        $this->setBuiltRuleCache($ruleBlueprint, $builtRule);
+        $this->buildFastParseData($ruleBlueprint, $builtRule);
+
+        return $builtRule;
+    }
+
+    /**
+     * Stores $builtRule to cache, using $ruleDeclaration as a part of cache key.
+     * This method stores only one built rule at once unlike [[setBuiltRulesCache()]] that stores many.
+     *
+     * @param array|object $ruleDeclaration the rule declaration. Please refer to [[setRules]] for the acceptable rule formats.
+     * @param UrlRuleInterface $builtRule the rule object built from the given rule declarations.
+     * @return bool whether the value is successfully stored into cache
+     * @since 2.0.41
+     */
+    protected function setBuiltRuleCache($ruleDeclaration, $builtRule)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->set([$this->cacheKey, $this->ruleConfig, $ruleDeclaration], $builtRule);
+    }
+
+    /**
+     * Stores fast parse data to cache, using $ruleDeclaration as a part of cache key.
+     *
+     * @param array|object $ruleDeclaration the rule declaration. Please refer to [[setRules]] for the acceptable rule formats.
+     * @param array $data the fast parse data built from the rule.
+     * @return bool whether the value is successfully stored into cache
+     * @since 2.0.41
+     */
+    protected function setBuiltFastParseDataCache($ruleDeclaration, $data)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->set([$this->cacheKey . 'FastParseData', $this->ruleConfig, $ruleDeclaration], $data);
     }
 
     /**
      * Stores $builtRules to cache, using $rulesDeclaration as a part of cache key.
      *
      * @param array $ruleDeclarations the rule declarations. Each array element represents a single rule declaration.
-     * Please refer to [[rules]] for the acceptable rule formats.
+     * Please refer to [[setRules]] for the acceptable rule formats.
      * @param UrlRuleInterface[] $builtRules the rule objects built from the given rule declarations.
      * @return bool whether the value is successfully stored into cache
      * @since 2.0.14
@@ -286,12 +376,47 @@ class UrlManager extends Component
     }
 
     /**
+     * Provides the built URL rule that is associated with the $ruleDeclaration from cache.
+     * This method provides only one built rule at once unlike [[getBuiltRulesFromCache()]] that provides many.
+     *
+     * @param array $ruleDeclaration the rule declaration
+     * @return UrlRuleInterface|false the rule object built from the given rule declaration or boolean `false` when
+     * there is no cache item stored for this definition.
+     * @since 2.0.41
+     */
+    protected function getBuiltRuleFromCache($ruleDeclaration)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->get([$this->cacheKey, $this->ruleConfig, $ruleDeclaration]);
+    }
+
+    /**
+     * Provides the fast parse data that is associated with the $ruleDeclaration from cache.
+     *
+     * @param array $ruleDeclaration the rule declaration
+     * @return array|false the fast parse data associated with the given rule declaration or boolean `false` when
+     * there is no cache item stored for this definition.
+     * @since 2.0.41
+     */
+    protected function getBuiltFastParseDataFromCache($ruleDeclaration)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->get([$this->cacheKey . 'FastParseData', $this->ruleConfig, $ruleDeclaration]);
+    }
+
+    /**
      * Provides the built URL rules that are associated with the $ruleDeclarations from cache.
      *
      * @param array $ruleDeclarations the rule declarations. Each array element represents a single rule declaration.
-     * Please refer to [[rules]] for the acceptable rule formats.
+     * Please refer to [[setRules]] for the acceptable rule formats.
      * @return UrlRuleInterface[]|false the rule objects built from the given rule declarations or boolean `false` when
-     * there are no cache items for this definition exists.
+     * there are no cache items stored for this definition.
      * @since 2.0.14
      */
     protected function getBuiltRulesFromCache($ruleDeclarations)
@@ -311,63 +436,157 @@ class UrlManager extends Component
      */
     public function parseRequest($request)
     {
-        if ($this->enablePrettyUrl) {
-            /* @var $rule UrlRule */
-            foreach ($this->rules as $rule) {
-                $result = $rule->parseRequest($this, $request);
-                if (YII_DEBUG) {
-                    Yii::debug([
-                        'rule' => method_exists($rule, '__toString') ? $rule->__toString() : get_class($rule),
-                        'match' => $result !== false,
-                        'parent' => null,
-                    ], __METHOD__);
+        if (!$this->enablePrettyUrl) {
+            Yii::debug('Pretty URL not enabled. Using default URL parsing logic.', __METHOD__);
+            $route = $request->getQueryParam($this->routeParam, '');
+            if (is_array($route)) {
+                $route = '';
+            }
+
+            return [(string) $route, []];
+        }
+
+        foreach ($this->_rulesDefinitions as $pattern => $rule) {
+            if (is_object($rule)) {
+                if (!$rule instanceof UrlRuleInterface) {
+                    continue;
                 }
+
+                $result = $this->parseRequestForRule($rule, $request);
                 if ($result !== false) {
                     return $result;
                 }
             }
 
-            if ($this->enableStrictParsing) {
-                return false;
+            if (is_array($rule)) {
+                $ruleBlueprint = $rule;
+            } else {
+                $ruleBlueprint = [$pattern => $rule];
             }
 
-            Yii::debug('No matching URL rules. Using default URL parsing logic.', __METHOD__);
-
-            $suffix = (string) $this->suffix;
-            $pathInfo = $request->getPathInfo();
-            $normalized = false;
-            if ($this->normalizer !== false) {
-                $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
-            }
-            if ($suffix !== '' && $pathInfo !== '') {
-                $n = strlen($this->suffix);
-                if (substr_compare($pathInfo, $this->suffix, -$n, $n) === 0) {
-                    $pathInfo = substr($pathInfo, 0, -$n);
-                    if ($pathInfo === '') {
-                        // suffix alone is not allowed
-                        return false;
+            $fastParseData = $this->getBuiltFastParseDataFromCache($ruleBlueprint);
+            if ($fastParseData === false || $fastParseData === []) {
+                $ruleBuilt = $this->buildRule($pattern, $rule);
+                // rule built; proceed to parse it in a standard way
+                $result = $this->parseRequestForRule($ruleBuilt, $request);
+                if ($result !== false) {
+                    return $result;
+                }
+            } else {
+                $result = $this->processFastParseData($fastParseData, $request);
+                if ($result === false) {
+                    if (YII_DEBUG) {
+                        Yii::debug([
+                            'rule' => ArrayHelper::getValue($fastParseData, 'name', $ruleBlueprint),
+                            'match' => false,
+                            'parent' => null,
+                        ], __METHOD__);
                     }
-                } else {
-                    // suffix doesn't match
-                    return false;
+                    continue;
+                }
+
+                // fast parsing matched; use original rule to finish parsing
+                $ruleBuilt = $this->buildRule($pattern, $rule);
+                $result = $this->parseRequestForRule($ruleBuilt, $request);
+                if ($result !== false) {
+                    return $result;
                 }
             }
+        }
 
-            if ($normalized) {
-                // pathInfo was changed by normalizer - we need also normalize route
-                return $this->normalizer->normalizeRoute([$pathInfo, []]);
+        if ($this->enableStrictParsing) {
+            return false;
+        }
+
+        Yii::debug('No matching URL rules. Using default URL parsing logic.', __METHOD__);
+
+        $suffix = (string) $this->suffix;
+        $pathInfo = $request->getPathInfo();
+        $normalized = false;
+        if ($this->normalizer !== false) {
+            $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
+        }
+
+        $result = $this->fitSuffix($suffix, $pathInfo);
+        if ($result === false) {
+            return false;
+        }
+
+        if ($normalized) {
+            // pathInfo was changed by normalizer - we need also normalize route
+            return $this->normalizer->normalizeRoute([$pathInfo, []]);
+        }
+
+        return [$pathInfo, []];
+    }
+
+    private function parseRequestForRule($rule, $request)
+    {
+        $result = $rule->parseRequest($this, $request);
+        if (YII_DEBUG) {
+            Yii::debug([
+                'rule' => method_exists($rule, '__toString') ? $rule->__toString() : get_class($rule),
+                'match' => $result !== false,
+                'parent' => null,
+            ], __METHOD__);
+        }
+        return $result;
+    }
+
+    private function fitSuffix($suffix, &$pathInfo)
+    {
+        if ($suffix !== '' && $pathInfo !== '') {
+            $n = strlen($suffix);
+            if (substr_compare($pathInfo, $suffix, -$n, $n) === 0) {
+                $pathInfo = substr($pathInfo, 0, -$n);
+                if ($pathInfo === '') {
+                    // suffix alone is not allowed
+                    return false;
+                }
+            } else {
+                // suffix doesn't match
+                return false;
             }
-
-            return [$pathInfo, []];
         }
 
-        Yii::debug('Pretty URL not enabled. Using default URL parsing logic.', __METHOD__);
-        $route = $request->getQueryParam($this->routeParam, '');
-        if (is_array($route)) {
-            $route = '';
+        return true;
+    }
+
+    /**
+     * @param array $data
+     * @param Request $request
+     * @return bool
+     * @since 2.0.41
+     */
+    protected function processFastParseData($data, $request)
+    {
+        if ((int)ArrayHelper::getValue($data, 'skip', 0) === 1) {
+            return false;
+        }
+        $verbs = ArrayHelper::getValue($data, 'verb', []);
+        if (!empty($verbs) && !in_array($request->getMethod(), $verbs, true)) {
+            return false;
+        }
+        $suffix = ArrayHelper::getValue($data, 'suffix', '');
+        $suffix = (string) ($suffix === '' ? $this->suffix : $suffix);
+        $pathInfo = $request->getPathInfo();
+        $normalized = false;
+        if ($this->normalizer !== false) {
+            $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
+        }
+        $result = $this->fitSuffix($suffix, $pathInfo);
+        if ($result === false) {
+            return false;
+        }
+        if ((int)ArrayHelper::getValue($data, 'host', 0) === 1) {
+            $pathInfo = strtolower($request->getHostInfo()) . ($pathInfo === '' ? '' : '/' . $pathInfo);
+        }
+        $pattern = ArrayHelper::getValue($data, 'pattern');
+        if ($pattern === null || !preg_match($pattern, $pathInfo)) {
+            return false;
         }
 
-        return [(string) $route, []];
+        return true;
     }
 
     /**
@@ -420,8 +639,9 @@ class UrlManager extends Component
 
             $url = $this->getUrlFromCache($cacheKey, $route, $params);
             if ($url === false) {
+                $rules = $this->getRules();
                 /* @var $rule UrlRule */
-                foreach ($this->rules as $rule) {
+                foreach ($rules as $rule) {
                     if (in_array($rule, $this->_ruleCache[$cacheKey], true)) {
                         // avoid redundant calls of `UrlRule::createUrl()` for rules checked in `getUrlFromCache()`
                         // @see https://github.com/yiisoft/yii2/issues/14094
@@ -651,5 +871,22 @@ class UrlManager extends Component
     public function setHostInfo($value)
     {
         $this->_hostInfo = $value === null ? null : rtrim($value, '/');
+    }
+
+    /**
+     * Prepares the data to be used to parse the rule in a fast manner.
+     * @param array|object $ruleBlueprint
+     * @param UrlRuleInterface $rule
+     * @since 2.0.41
+     */
+    protected function buildFastParseData($ruleBlueprint, $rule)
+    {
+        $data = [];
+
+        if (method_exists($rule, 'getFastParseData')) {
+            $data = $rule->getFastParseData();
+        }
+
+        $this->setBuiltFastParseDataCache($ruleBlueprint, $data);
     }
 }

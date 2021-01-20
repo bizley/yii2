@@ -599,4 +599,47 @@ class UrlRule extends BaseObject implements UrlRuleInterface
 
         return trim($string, '/');
     }
+
+    /**
+     * Returns the data allowing to parse this rule in a fast manner while processing the request.
+     * The data should be static otherwise the default rule object must be used for parsing.
+     * Empty data array indicates that the rule cannot be fast-parsed (parsing will fall back to default process).
+     * The following data keys will be processed:
+     * - skip - if set to 1 this rule can be omitted while parsing,
+     * - verb - list of the HTTP verbs that this rule should match (see [[verb]]),
+     * - pattern - prepared and translated pattern used to parse the path info part of a URL (see [[preparePattern()]]
+     *             and [[translatePattern()]])
+     * - suffix - the URL suffix used for this rule,
+     * - host - if set to 1 this rule uses the host pattern (see [[host]])
+     * - name - name of the rule
+     * @return array
+     * @since 2.0.41
+     */
+    public function getFastParseData()
+    {
+        if ($this->mode === self::CREATION_ONLY) {
+            return ['skip' => 1];
+        }
+
+        if ($this->normalizer !== null && $this->normalizer !== false) {
+            return [];
+        }
+
+        $data = [
+            'pattern' => $this->pattern,
+            'name' => $this->__toString()
+        ];
+
+        if (!empty($this->verb)) {
+            $data['verb'] = $this->verb;
+        }
+        if (!empty($this->suffix)) {
+            $data['suffix'] = $this->suffix;
+        }
+        if (!empty($this->host)) {
+            $data['host'] = 1;
+        }
+
+        return $data;
+    }
 }

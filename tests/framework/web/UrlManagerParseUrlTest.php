@@ -361,7 +361,7 @@ class UrlManagerParseUrlTest extends TestCase
             'book/<id:\d+>/<title>' => 'book/view',
         ]);
         $this->assertCount(3, $manager->rules);
-        $this->assertSame($firstRule, $manager->rules[0]);
+        $this->assertSame((string)$firstRule, (string)$manager->rules[0]);
     }
 
     public function testPrependRules()
@@ -377,8 +377,8 @@ class UrlManagerParseUrlTest extends TestCase
             'book/<id:\d+>/<title>' => 'book/view',
         ], false);
         $this->assertCount(3, $manager->rules);
-        $this->assertNotSame($firstRule, $manager->rules[0]);
-        $this->assertSame($firstRule, $manager->rules[2]);
+        $this->assertNotSame((string)$firstRule, (string)$manager->rules[0]);
+        $this->assertSame((string)$firstRule, (string)$manager->rules[2]);
     }
 
     public function testRulesCache()
@@ -393,9 +393,8 @@ class UrlManagerParseUrlTest extends TestCase
         $this->assertCount(1, $manager->rules);
         $firstRule = $manager->rules[0];
         $this->assertInstanceOf('yii\web\UrlRuleInterface', $firstRule);
-        $this->assertCount(1, $this->getInaccessibleProperty($arrayCache, '_cache'),
-            'Cache contains the only one record that represents initial built rules'
-        );
+        // cache should contain 2 records - rule and its fast parse data
+        $this->assertCount(2, $this->getInaccessibleProperty($arrayCache, '_cache'));
 
         $manager->addRules(['posts' => 'post/index']);
         $manager->addRules([
@@ -404,11 +403,9 @@ class UrlManagerParseUrlTest extends TestCase
         ]);
 
         $this->assertCount(4, $manager->rules);
-        $this->assertSame($firstRule, $manager->rules[0]);
-        $this->assertCount(3, $this->getInaccessibleProperty($arrayCache, '_cache'),
-            'The addRules() method was called twice, adding 3 new rules to the UrlManager, but we have only ' .
-            'two additional caches: one for each addRules() method call.'
-        );
+        $this->assertSame((string)$firstRule, (string)$manager->rules[0]);
+        // cache should contain 8 records - 4 rules x 2
+        $this->assertCount(8, $this->getInaccessibleProperty($arrayCache, '_cache'));
     }
 
     public function testRulesCacheIsUsed()
