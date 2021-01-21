@@ -15,7 +15,7 @@ class SpeedUrlManagerParseUrlTest extends UrlManagerParseUrlTest
     {
         $this->markTestSkipped();
         $rules = [];
-        $charSet = range('a', 's');
+        $charSet = range('a', 'z');
         foreach ($charSet as $c1) {
             foreach ($charSet as $c2) {
                 foreach ($charSet as $c3) {
@@ -27,16 +27,24 @@ class SpeedUrlManagerParseUrlTest extends UrlManagerParseUrlTest
             }
         }
 
+        $cache = new ArrayCache();
+
         $step = microtime(true);
         $manager = $this->getUrlManager([
             'rules' => $rules,
-            'cache' => new ArrayCache(),
+            'cache' => $cache,
         ]);
-        var_dump(['init' => microtime(true) - $step]);
-        $step = microtime(true);
-        // cache the rule
         $manager->rules;
-        var_dump(['cached' => microtime(true) - $step]);
+        var_dump(['init+cache' => microtime(true) - $step]);
+
+
+        $step = microtime(true);
+        $manager = $this->getUrlManager([
+                                            'rules' => $rules,
+                                            'cache' => $cache,
+                                        ]);
+        var_dump(['init' => microtime(true) - $step]);
+
         $step = microtime(true);
         $result = $manager->parseRequest($this->getRequest('site/index'));
         var_dump(['parsed' => microtime(true) - $step]);
