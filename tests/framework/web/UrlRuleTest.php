@@ -1385,4 +1385,97 @@ class UrlRuleTest extends TestCase
             ],
         ];
     }
+
+    public function providerForFastParseData()
+    {
+        return [
+            'wrong mode' => [
+                [
+                    'mode' => UrlRule::CREATION_ONLY,
+                    'route' => 'post/index',
+                    'pattern' => 'post',
+                ],
+                ['skip' => 1],
+            ],
+            'good mode' => [
+                [
+                    'mode' => UrlRule::PARSING_ONLY,
+                    'route' => 'post/index',
+                    'pattern' => 'post',
+                ],
+                [
+                    'pattern' => '#^post$#u',
+                    'name' => 'post',
+                ],
+            ],
+            'normalizer' => [
+                [
+                    'pattern' => 'post',
+                    'route' => 'post/index',
+                    'normalizer' => ['class' => 'yii\web\UrlNormalizer']
+                ],
+                [],
+            ],
+            'single verb' => [
+                [
+                    'pattern' => 'post',
+                    'route' => 'post/index',
+                    'verb' => 'post'
+                ],
+                [
+                    'pattern' => '#^post$#u',
+                    'name' => 'POST post',
+                    'verb' => ['POST']
+                ],
+            ],
+            'many verbs' => [
+                [
+                    'pattern' => 'post',
+                    'route' => 'post/index',
+                    'verb' => ['post', 'put']
+                ],
+                [
+                    'pattern' => '#^post$#u',
+                    'name' => 'POST,PUT post',
+                    'verb' => ['POST', 'PUT']
+                ],
+            ],
+            'suffix' => [
+                [
+                    'pattern' => 'post',
+                    'route' => 'post/index',
+                    'suffix' => '.html'
+                ],
+                [
+                    'pattern' => '#^post$#u',
+                    'name' => 'post',
+                    'suffix' => '.html'
+                ],
+            ],
+            'host' => [
+                [
+                    'pattern' => 'post',
+                    'route' => 'post/index',
+                    'host' => 'http://example.com'
+                ],
+                [
+                    'pattern' => '#^http://example\.com/post$#u',
+                    'name' => 'http://example.com/post',
+                    'host' => 1
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider providerForFastParseData
+     * @param array $config
+     * @param array $data
+     */
+    public function testFastParseData($config, $data)
+    {
+        /** @var UrlRule $rule */
+        $rule = Yii::createObject(array_merge(['class' => 'yii\web\UrlRule'], $config));
+        $this->assertSame($data, $rule->getFastParseData());
+    }
 }

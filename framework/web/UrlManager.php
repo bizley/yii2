@@ -456,6 +456,7 @@ class UrlManager extends Component
                 if ($result !== false) {
                     return $result;
                 }
+                continue;
             }
 
             if (is_array($rule)) {
@@ -472,25 +473,26 @@ class UrlManager extends Component
                 if ($result !== false) {
                     return $result;
                 }
-            } else {
-                $result = $this->processFastParseData($fastParseData, $request);
-                if ($result === false) {
-                    if (YII_DEBUG) {
-                        Yii::debug([
-                            'rule' => ArrayHelper::getValue($fastParseData, 'name', $ruleBlueprint),
-                            'match' => false,
-                            'parent' => null,
-                        ], __METHOD__);
-                    }
-                    continue;
-                }
+                continue;
+            }
 
-                // fast parsing matched; use original rule to finish parsing
-                $ruleBuilt = $this->buildRule($pattern, $rule);
-                $result = $this->parseRequestForRule($ruleBuilt, $request);
-                if ($result !== false) {
-                    return $result;
+            $result = $this->processFastParseData($fastParseData, $request);
+            if ($result === false) {
+                if (YII_DEBUG) {
+                    Yii::debug([
+                        'rule' => ArrayHelper::getValue($fastParseData, 'name', $ruleBlueprint),
+                        'match' => false,
+                        'parent' => null,
+                    ], __METHOD__);
                 }
+                continue;
+            }
+
+            // fast parsing matched; use original rule to finish parsing
+            $ruleBuilt = $this->buildRule($pattern, $rule);
+            $result = $this->parseRequestForRule($ruleBuilt, $request);
+            if ($result !== false) {
+                return $result;
             }
         }
 
@@ -520,6 +522,11 @@ class UrlManager extends Component
         return [$pathInfo, []];
     }
 
+    /**
+     * @param UrlRuleInterface $rule
+     * @param Request $request
+     * @return array|bool
+     */
     private function parseRequestForRule($rule, $request)
     {
         $result = $rule->parseRequest($this, $request);

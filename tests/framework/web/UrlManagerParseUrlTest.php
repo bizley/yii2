@@ -10,6 +10,8 @@ namespace yiiunit\framework\web;
 use yii\caching\ArrayCache;
 use yii\web\Request;
 use yii\web\UrlManager;
+use yii\web\UrlRule;
+use yiiunit\framework\web\stubs\InvalidRule;
 use yiiunit\TestCase;
 
 /**
@@ -107,18 +109,29 @@ class UrlManagerParseUrlTest extends TestCase
     public function suffixProvider()
     {
         return [
-            ['.html'],
-            ['/'],
+            'first no cache' => ['.html', false],
+            'first with cache' => ['.html', true],
+            'second no cache' => ['/', false],
+            'second with cache' => ['/', true],
         ];
     }
 
     /**
      * @dataProvider suffixProvider
      * @param string $suffix
+     * @param bool $withCache
      */
-    public function testWithoutRulesWithSuffix($suffix)
+    public function testWithoutRulesWithSuffix($suffix, $withCache)
     {
-        $manager = $this->getUrlManager(['suffix' => $suffix]);
+        $config = ['suffix' => $suffix];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
+        $manager = $this->getUrlManager($config);
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
 
         // empty pathinfo
         $result = $manager->parseRequest($this->getRequest(''));
@@ -142,7 +155,19 @@ class UrlManagerParseUrlTest extends TestCase
         $this->assertEquals(['module/site/index/', []], $result);
     }
 
-    public function testSimpleRules()
+    public function withCacheProvider()
+    {
+        return [
+            'no cache' => [false],
+            'with cache' => [true],
+        ];
+    }
+
+    /**
+     * @dataProvider withCacheProvider
+     * @param bool $withCache
+     */
+    public function testSimpleRules($withCache)
     {
         $config = [
             'rules' => [
@@ -151,7 +176,14 @@ class UrlManagerParseUrlTest extends TestCase
                 'book/<id:\d+>/<title>' => 'book/view',
             ],
         ];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
         $manager = $this->getUrlManager($config);
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
 
         // matching pathinfo
         $result = $manager->parseRequest($this->getRequest('book/123/this+is+sample'));
@@ -170,7 +202,11 @@ class UrlManagerParseUrlTest extends TestCase
         $this->assertEquals(['module/site/index', []], $result);
     }
 
-    public function testSimpleRulesStrict()
+    /**
+     * @dataProvider withCacheProvider
+     * @param bool $withCache
+     */
+    public function testSimpleRulesStrict($withCache)
     {
         $config = [
             'rules' => [
@@ -179,8 +215,15 @@ class UrlManagerParseUrlTest extends TestCase
                 'book/<id:\d+>/<title>' => 'book/view',
             ],
         ];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
         $manager = $this->getUrlManager($config);
         $manager->enableStrictParsing = true;
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
 
         // matching pathinfo
         $result = $manager->parseRequest($this->getRequest('book/123/this+is+sample'));
@@ -202,8 +245,9 @@ class UrlManagerParseUrlTest extends TestCase
     /**
      * @dataProvider suffixProvider
      * @param string $suffix
+     * @param bool $withCache
      */
-    public function testSimpleRulesWithSuffix($suffix)
+    public function testSimpleRulesWithSuffix($suffix, $withCache)
     {
         $config = [
             'rules' => [
@@ -213,7 +257,14 @@ class UrlManagerParseUrlTest extends TestCase
             ],
             'suffix' => $suffix,
         ];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
         $manager = $this->getUrlManager($config);
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
 
         // matching pathinfo
         $result = $manager->parseRequest($this->getRequest('book/123/this+is+sample'));
@@ -247,8 +298,9 @@ class UrlManagerParseUrlTest extends TestCase
     /**
      * @dataProvider suffixProvider
      * @param string $suffix
+     * @param bool $withCache
      */
-    public function testSimpleRulesWithSuffixStrict($suffix)
+    public function testSimpleRulesWithSuffixStrict($suffix, $withCache)
     {
         $config = [
             'rules' => [
@@ -258,8 +310,15 @@ class UrlManagerParseUrlTest extends TestCase
             ],
             'suffix' => $suffix,
         ];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
         $manager = $this->getUrlManager($config);
         $manager->enableStrictParsing = true;
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
 
         // matching pathinfo
         $result = $manager->parseRequest($this->getRequest('book/123/this+is+sample'));
@@ -295,8 +354,11 @@ class UrlManagerParseUrlTest extends TestCase
     // TODO implement with hostinfo
 
 
-
-    public function testParseRESTRequest()
+    /**
+     * @dataProvider withCacheProvider
+     * @param bool $withCache
+     */
+    public function testParseRESTRequest($withCache)
     {
         $request = new Request();
 
@@ -304,7 +366,7 @@ class UrlManagerParseUrlTest extends TestCase
         $manager = new UrlManager([
             'enablePrettyUrl' => true,
             'showScriptName' => false,
-            'cache' => null,
+            'cache' => $withCache ? new ArrayCache() : null,
             'rules' => [
                 'PUT,POST post/<id>/<title>' => 'post/create',
                 'DELETE post/<id>' => 'post/delete',
@@ -312,6 +374,11 @@ class UrlManagerParseUrlTest extends TestCase
                 'POST/GET' => 'post/get',
             ],
         ]);
+        if ($withCache) {
+            // cache the rules
+            $manager->rules;
+        }
+
         // matching pathinfo GET request
         $_SERVER['REQUEST_METHOD'] = 'GET';
         $request->pathInfo = 'post/123/this+is+sample';
@@ -348,9 +415,17 @@ class UrlManagerParseUrlTest extends TestCase
         unset($_SERVER['REQUEST_METHOD']);
     }
 
-    public function testAppendRules()
+    /**
+     * @dataProvider withCacheProvider
+     * @param bool $withCache
+     */
+    public function testAppendRules($withCache)
     {
-        $manager = $this->getUrlManager(['rules' => ['post/<id:\d+>' => 'post/view']]);
+        $config = ['rules' => ['post/<id:\d+>' => 'post/view']];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
+        $manager = $this->getUrlManager($config);
 
         $this->assertCount(1, $manager->rules);
         $firstRule = $manager->rules[0];
@@ -364,9 +439,17 @@ class UrlManagerParseUrlTest extends TestCase
         $this->assertSame((string)$firstRule, (string)$manager->rules[0]);
     }
 
-    public function testPrependRules()
+    /**
+     * @dataProvider withCacheProvider
+     * @param bool $withCache
+     */
+    public function testPrependRules($withCache)
     {
-        $manager = $this->getUrlManager(['rules' => ['post/<id:\d+>' => 'post/view']]);
+        $config = ['rules' => ['post/<id:\d+>' => 'post/view']];
+        if ($withCache) {
+            $config['cache'] = new ArrayCache();
+        }
+        $manager = $this->getUrlManager($config);
 
         $this->assertCount(1, $manager->rules);
         $firstRule = $manager->rules[0];
@@ -458,6 +541,191 @@ class UrlManagerParseUrlTest extends TestCase
 
         $result = $manager->parseRequest($this->getRequest('users/somecontroller/someaction'));
         $this->assertEquals(['site/index', ['url' => 'users/somecontroller/someaction']], $result);
+    }
 
+    public function testParsingWithInvalidRuleObjectProvided()
+    {
+        InvalidRule::$visited = false;
+
+        $manager = $this->getUrlManager([
+            'rules' => [
+                new InvalidRule()
+            ],
+        ]);
+
+        $result = $manager->parseRequest($this->getRequest('site/index'));
+        $this->assertEquals(['site/index', []], $result);
+        $this->assertFalse(InvalidRule::$visited);
+    }
+
+    public function testParsingWithRuleObjectProvided()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                new UrlRule([
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                ]),
+            ],
+        ]);
+
+        $result = $manager->parseRequest($this->getRequest('post/1'));
+        $this->assertEquals(['post/view', ['id' => 1]], $result);
+    }
+
+    public function providerForFastParseData()
+    {
+        return [
+            'empty' => [[], true], // fast parse data is empty forcing the rule to be processed normally
+            'skip' => [['skip' => 1, 'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u'], false],
+            'wrong verb' => [['verb' => ['POST'], 'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u'], false],
+            'good verb' => [['verb' => ['GET'], 'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u'], true],
+            'wrong pattern' => [['pattern' => '#^wrong/(?P<abf396750>[^\/]+)$#u'], false],
+            'good pattern' => [['pattern' => '#^post/(?P<abf396750>[^\/]+)$#u'], true],
+        ];
+    }
+
+    /**
+     * @dataProvider providerForFastParseData
+     * @param array $config
+     * @param bool $matched
+     */
+    public function testFastParseData($config, $matched)
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => $config,
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view'
+                ],
+            ],
+            'cache' => new ArrayCache(),
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1'));
+        $this->assertEquals($matched ? ['post/view', ['id' => 1]] : ['post/1', []], $result);
+    }
+
+    public function testFastParseDataWithWrongSuffix()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => [
+                        'suffix' => 'wrong',
+                        'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u',
+                    ],
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                    'suffix' => 'wrong', // repeated here to make sure rule data would be properly initialized
+                ],
+            ],
+            'cache' => new ArrayCache(),
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1.html'));
+        $this->assertEquals(['post/1.html', []], $result);
+    }
+
+    public function testFastParseDataWithRuleSuffix()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => [
+                        'suffix' => '.html',
+                        'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u',
+                    ],
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                    'suffix' => '.html', // repeated here to make sure rule data would be properly initialized
+                ],
+            ],
+            'cache' => new ArrayCache(),
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1.html'));
+        $this->assertEquals(['post/view', ['id' => 1]], $result);
+    }
+
+    public function testFastParseDataWithManagerSuffix()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => [
+                        'pattern' => '#^post/(?P<abf396750>[^\/]+)$#u',
+                    ],
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                ],
+            ],
+            'cache' => new ArrayCache(),
+            'suffix' => '.html',
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1.html'));
+        $this->assertEquals(['post/view', ['id' => 1]], $result);
+    }
+
+    public function testFastParseDataWithInvalidHostAndHostFlag()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => [
+                        'host' => 1,
+                        'pattern' => '#^http://www\.wrong\.com/post/(?P<abf396750>[^\/]+)$#u',
+                    ],
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                    'host' => 'http://www.wrong.com',
+                ],
+            ],
+            'cache' => new ArrayCache(),
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1'));
+        $this->assertEquals(['post/1', []], $result);
+    }
+
+    public function testFastParseDataWithGoodHostAndHostFlag()
+    {
+        $manager = $this->getUrlManager([
+            'rules' => [
+                [
+                    'class' => 'yiiunit\framework\web\mocks\ConfigurableFastParseDataRule',
+                    'fastParseDataConfig' => [
+                        'host' => 1,
+                        'pattern' => '#^http://www\.example\.com/post/(?P<abf396750>[^\/]+)$#u',
+                    ],
+                    'pattern' => 'post/<id>',
+                    'route' => 'post/view',
+                    'host' => 'http://www.example.com',
+                ],
+            ],
+            'cache' => new ArrayCache(),
+        ]);
+        // cache the rule
+        $manager->rules;
+
+        $result = $manager->parseRequest($this->getRequest('post/1'));
+        $this->assertEquals(['post/view', ['id' => 1]], $result);
     }
 }
