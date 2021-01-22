@@ -12,6 +12,7 @@ use yii\base\Component;
 use yii\base\InvalidConfigException;
 use yii\caching\CacheInterface;
 use yii\di\Instance;
+use yii\helpers\ArrayHelper;
 use yii\helpers\Url;
 
 /**
@@ -43,6 +44,7 @@ use yii\helpers\Url;
  * [[createAbsoluteUrl()]] to prepend to created URLs.
  * @property string $scriptUrl The entry script URL that is used by [[createUrl()]] to prepend to created
  * URLs.
+ * @property array $rules
  *
  * @author Qiang Xue <qiang.xue@gmail.com>
  * @since 2.0
@@ -102,7 +104,7 @@ class UrlManager extends Component
      * Note that if you modify this property after the UrlManager object is created, make sure
      * you populate the array with rule objects instead of rule configurations.
      */
-    public $rules = [];
+    //public $rules = [];
     /**
      * @var string the URL suffix used when [[enablePrettyUrl]] is `true`.
      * For example, ".html" can be used so that the URL looks like pointing to a static HTML page.
@@ -166,6 +168,9 @@ class UrlManager extends Component
     private $_scriptUrl;
     private $_hostInfo;
     private $_ruleCache;
+    private $_rulesDeclaration = [];
+    private $_rules;
+    private $_fastParseData;
 
 
     /**
@@ -192,10 +197,33 @@ class UrlManager extends Component
                 Yii::warning('Unable to use cache for URL manager: ' . $e->getMessage());
             }
         }
-        if (empty($this->rules)) {
-            return;
+    }
+
+    public function setRules($rules)
+    {
+        $this->_rulesDeclaration = $rules;
+        $this->_fastParseData = null;
+    }
+
+    public function getRules()
+    {
+        if ($this->_rules === null) {
+            $this->_rules = $this->buildRules($this->_rulesDeclaration);
         }
-        $this->rules = $this->buildRules($this->rules);
+
+        return array_values($this->_rules);
+    }
+
+    public function getFastParseData()
+    {
+        if ($this->_fastParseData === null) {
+            if ($this->_rules === null) {
+                $this->_rules = $this->buildRules($this->_rulesDeclaration);
+            }
+            $this->_fastParseData = $this->buildFastParseData($this->_rules, $this->_rulesDeclaration);
+        }
+
+        return $this->_fastParseData;
     }
 
     /**
@@ -241,6 +269,7 @@ class UrlManager extends Component
         $builtRules = [];
         $verbs = 'GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS';
         foreach ($ruleDeclarations as $key => $rule) {
+            $ruleKey = null;
             if (is_string($rule)) {
                 $rule = ['route' => $rule];
                 if (preg_match("/^((?:($verbs),)*($verbs))\\s+(.*)$/", $key, $matches)) {
@@ -254,17 +283,88 @@ class UrlManager extends Component
                 $rule['pattern'] = $key;
             }
             if (is_array($rule)) {
+                $ruleKey = serialize($rule);
                 $rule = Yii::createObject(array_merge($this->ruleConfig, $rule));
             }
             if (!$rule instanceof UrlRuleInterface) {
                 throw new InvalidConfigException('URL rule class must implement UrlRuleInterface.');
             }
-            $builtRules[] = $rule;
+            if ($ruleKey === null) {
+                // rule is object from the beginning
+                $ruleKey = serialize($rule);
+            }
+            $builtRules[$ruleKey] = $rule;
         }
 
         $this->setBuiltRulesCache($ruleDeclarations, $builtRules);
 
         return $builtRules;
+    }
+
+    protected function buildFastParseData($ruleDeclarations, $rulesData)
+    {
+        $builtFastParseData = $this->getBuiltFastParseDataFromCache($ruleDeclarations);
+        if ($builtFastParseData !== false) {
+            return $builtFastParseData;
+        }
+
+        $fastParseData = [];
+
+        /* @var $rule UrlRuleInterface */
+        foreach ($rulesData as $key => $rule) {
+            if (!method_exists($rule, 'getFastParseData')) {
+                if (!array_key_exists('', $fastParseData)) {
+                    $fastParseData[''] = [];
+                }
+                $fastParseData[''][$key] = null;
+            } else {
+                $data = $rule->getFastParseData();
+                if (!is_array($data)) {
+                    if (!array_key_exists('', $fastParseData)) {
+                        $fastParseData[''] = [];
+                    }
+                    $fastParseData[''][$key] = null;
+                    continue;
+                }
+
+                if ((bool)ArrayHelper::getValue($data, 'skip', false)) {
+                    continue;
+                }
+
+                $pattern = ArrayHelper::getValue($data, 'pattern');
+                if ($pattern === null) {
+                    if (!array_key_exists('', $fastParseData)) {
+                        $fastParseData[''] = [];
+                    }
+                    $fastParseData[''][$key] = null;
+                    continue;
+                }
+                $ruleFastParseData = ['pattern' => $pattern];
+                $suffix = ArrayHelper::getValue($data, 'suffix');
+                if (!empty($suffix)) {
+                    $ruleFastParseData['suffix'] = $suffix;
+                }
+                $host = (bool)ArrayHelper::getValue($data, 'host', false);
+                if ($host) {
+                    $ruleFastParseData['host'] = true;
+                }
+                $verbs = ArrayHelper::getValue($data, 'verb', []);
+                if ($verbs === []) {
+                    $fastParseData[''][$key] = $ruleFastParseData;
+                } else {
+                    foreach ($verbs as $verb) {
+                        if (!array_key_exists($verb, $fastParseData)) {
+                            $fastParseData[$verb] = [];
+                        }
+                        $fastParseData[$verb][$key] = $ruleFastParseData;
+                    }
+                }
+            }
+        }
+
+        $this->setBuiltFastParseDataCache($ruleDeclarations, $fastParseData);
+
+        return $fastParseData;
     }
 
     /**
@@ -285,6 +385,18 @@ class UrlManager extends Component
         return $this->cache->set([$this->cacheKey, $this->ruleConfig, $ruleDeclarations], $builtRules);
     }
 
+    protected function setBuiltFastParseDataCache($ruleDeclarations, $builtFastParseData)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->set(
+            [$this->cacheKey . 'FastParseData', $this->ruleConfig, $ruleDeclarations],
+            $builtFastParseData
+        );
+    }
+
     /**
      * Provides the built URL rules that are associated with the $ruleDeclarations from cache.
      *
@@ -303,6 +415,15 @@ class UrlManager extends Component
         return $this->cache->get([$this->cacheKey, $this->ruleConfig, $ruleDeclarations]);
     }
 
+    protected function getBuiltFastParseDataFromCache($ruleDeclarations)
+    {
+        if (!$this->cache instanceof CacheInterface) {
+            return false;
+        }
+
+        return $this->cache->get([$this->cacheKey . 'FastParseData', $this->ruleConfig, $ruleDeclarations]);
+    }
+
     /**
      * Parses the user request.
      * @param Request $request the request component
@@ -312,6 +433,25 @@ class UrlManager extends Component
     public function parseRequest($request)
     {
         if ($this->enablePrettyUrl) {
+            $fastParseData = $this->getFastParseData();
+            if ($fastParseData !== []) {
+                $method = $request->getMethod();
+                if (array_key_exists($method, $fastParseData)) {
+                    $result = $this->fastParseRequestForRuleSet($fastParseData[$method]);
+                    if ($result !== false) {
+                        return $result;
+                    }
+                }
+
+                if (array_key_exists('', $fastParseData)) {
+                    $result = $this->fastParseRequestForRuleSet($fastParseData['']);
+                    if ($result !== false) {
+                        return $result;
+                    }
+                }
+            }
+
+
             /* @var $rule UrlRule */
             foreach ($this->rules as $rule) {
                 $result = $rule->parseRequest($this, $request);
@@ -368,6 +508,13 @@ class UrlManager extends Component
         }
 
         return [(string) $route, []];
+    }
+
+    protected function fastParseRequestForRuleSet($data)
+    {
+
+
+        return false;
     }
 
     /**

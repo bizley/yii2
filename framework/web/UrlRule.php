@@ -599,4 +599,24 @@ class UrlRule extends BaseObject implements UrlRuleInterface
 
         return trim($string, '/');
     }
+
+    public function getFastParseData()
+    {
+        if ($this->mode === self::CREATION_ONLY) {
+            return ['skip' => true];
+        }
+
+        $data = ['pattern' => $this->pattern];
+        if (!empty($this->host)) {
+            $data['host'] = true;
+        }
+        if (!empty($this->suffix)) {
+            $data['suffix'] = $this->suffix;
+        }
+        if ($this->verb) {
+            $data['verb'] = $this->verb;
+        }
+
+        return $data;
+    }
 }
