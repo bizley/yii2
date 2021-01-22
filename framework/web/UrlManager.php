@@ -437,14 +437,14 @@ class UrlManager extends Component
             if ($fastParseData !== []) {
                 $method = $request->getMethod();
                 if (array_key_exists($method, $fastParseData)) {
-                    $result = $this->fastParseRequestForRuleSet($fastParseData[$method]);
+                    $result = $this->fastParseRequestForRuleSet($fastParseData[$method], $request);
                     if ($result !== false) {
                         return $result;
                     }
                 }
 
                 if (array_key_exists('', $fastParseData)) {
-                    $result = $this->fastParseRequestForRuleSet($fastParseData['']);
+                    $result = $this->fastParseRequestForRuleSet($fastParseData[''], $request);
                     if ($result !== false) {
                         return $result;
                     }
@@ -510,9 +510,37 @@ class UrlManager extends Component
         return [(string) $route, []];
     }
 
-    protected function fastParseRequestForRuleSet($data)
+    /**
+     * @param array $fastParseData
+     * @param Request $request
+     * @return array|false
+     * @throws \Exception
+     */
+    protected function fastParseRequestForRuleSet($fastParseData, $request)
     {
+        $requestPathInfo = $request->getPathInfo();
+        $requestHostInfo = strtolower($request->getHostInfo());
 
+        foreach ($fastParseData as $key => $data) {
+            $suffix = ArrayHelper::getValue($data, 'suffix', '');
+            $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
+            $pathInfo = $requestPathInfo;
+            $normalized = false;
+            if ($this->normalizer !== false) {
+                $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
+            }
+            $result = $this->fitSuffix($suffix, $pathInfo);
+            if ($result === false) {
+                return false;
+            }
+            if ((int)ArrayHelper::getValue($data, 'host', 0) === 1) {
+                $pathInfo = $requestHostInfo . ($pathInfo === '' ? '' : '/' . $pathInfo);
+            }
+            $pattern = ArrayHelper::getValue($data, 'pattern');
+            if ($pattern === null || !preg_match($pattern, $pathInfo)) {
+                return false;
+            }
+        }
 
         return false;
     }
