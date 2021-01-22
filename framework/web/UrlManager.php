@@ -479,18 +479,10 @@ class UrlManager extends Component
             if ($this->normalizer !== false) {
                 $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
             }
-            if ($suffix !== '' && $pathInfo !== '') {
-                $n = strlen($this->suffix);
-                if (substr_compare($pathInfo, $this->suffix, -$n, $n) === 0) {
-                    $pathInfo = substr($pathInfo, 0, -$n);
-                    if ($pathInfo === '') {
-                        // suffix alone is not allowed
-                        return false;
-                    }
-                } else {
-                    // suffix doesn't match
-                    return false;
-                }
+
+            $result = $this->fitSuffix($suffix, $pathInfo);
+            if ($result === false) {
+                return false;
             }
 
             if ($normalized) {
@@ -513,7 +505,7 @@ class UrlManager extends Component
     /**
      * @param array $fastParseData
      * @param Request $request
-     * @return array|false
+     * @return string|false
      * @throws \Exception
      */
     protected function fastParseRequestForRuleSet($fastParseData, $request)
@@ -522,27 +514,63 @@ class UrlManager extends Component
         $requestHostInfo = strtolower($request->getHostInfo());
 
         foreach ($fastParseData as $key => $data) {
-            $suffix = ArrayHelper::getValue($data, 'suffix', '');
-            $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
-            $pathInfo = $requestPathInfo;
-            $normalized = false;
-            if ($this->normalizer !== false) {
-                $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
+            if (is_array($data)) {
+                $suffix = ArrayHelper::getValue($data, 'suffix', '');
+                $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
+                $pathInfo = $requestPathInfo;
+                $normalized = false;
+                if ($this->normalizer !== false) {
+                    $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
+                }
+                $result = $this->fitSuffix($suffix, $pathInfo);
+                if ($result === false) {
+                    continue;
+                }
+                if ((bool)ArrayHelper::getValue($data, 'host', false)) {
+                    $pathInfo = $requestHostInfo . ($pathInfo === '' ? '' : '/' . $pathInfo);
+                }
+                $pattern = ArrayHelper::getValue($data, 'pattern');
+                if ($pattern === null || !preg_match($pattern, $pathInfo)) {
+                    continue;
+                }
             }
-            $result = $this->fitSuffix($suffix, $pathInfo);
-            if ($result === false) {
-                return false;
-            }
-            if ((int)ArrayHelper::getValue($data, 'host', 0) === 1) {
-                $pathInfo = $requestHostInfo . ($pathInfo === '' ? '' : '/' . $pathInfo);
-            }
-            $pattern = ArrayHelper::getValue($data, 'pattern');
-            if ($pattern === null || !preg_match($pattern, $pathInfo)) {
-                return false;
+
+            if (array_key_exists($key, $this->_rules)) {
+                $rule = $this->_rules[$key];
+                $result = $rule->parseRequest($this, $request);
+                if (YII_DEBUG) {
+                    Yii::debug([
+                        'rule' => method_exists($rule, '__toString') ? $rule->__toString() : get_class($rule),
+                        'match' => $result !== false,
+                        'parent' => null,
+                    ], __METHOD__);
+                }
+                if ($result !== false) {
+                    return $result;
+                }
             }
         }
 
         return false;
+    }
+
+    private function fitSuffix($suffix, &$pathInfo)
+    {
+        if ($suffix !== '' && $pathInfo !== '') {
+            $n = strlen($suffix);
+            if (substr_compare($pathInfo, $suffix, -$n, $n) === 0) {
+                $pathInfo = substr($pathInfo, 0, -$n);
+                if ($pathInfo === '') {
+                    // suffix alone is not allowed
+                    return false;
+                }
+            } else {
+                // suffix doesn't match
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
