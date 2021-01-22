@@ -207,6 +207,9 @@ class UrlManager extends Component
 
     public function getRules()
     {
+        if (!$this->enablePrettyUrl) {
+            return $this->_rulesDeclaration;
+        }
         if ($this->_rules === null) {
             $this->_rules = $this->buildRules($this->_rulesDeclaration);
         }
@@ -216,6 +219,9 @@ class UrlManager extends Component
 
     public function getFastParseData()
     {
+        if (!$this->enablePrettyUrl) {
+            return [];
+        }
         if ($this->_fastParseData === null) {
             if ($this->_rules === null) {
                 $this->_rules = $this->buildRules($this->_rulesDeclaration);
@@ -448,22 +454,6 @@ class UrlManager extends Component
                     if ($result !== false) {
                         return $result;
                     }
-                }
-            }
-
-
-            /* @var $rule UrlRule */
-            foreach ($this->rules as $rule) {
-                $result = $rule->parseRequest($this, $request);
-                if (YII_DEBUG) {
-                    Yii::debug([
-                        'rule' => method_exists($rule, '__toString') ? $rule->__toString() : get_class($rule),
-                        'match' => $result !== false,
-                        'parent' => null,
-                    ], __METHOD__);
-                }
-                if ($result !== false) {
-                    return $result;
                 }
             }
 
