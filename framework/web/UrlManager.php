@@ -307,7 +307,7 @@ class UrlManager extends Component
         return $builtRules;
     }
 
-    protected function buildFastParseData($ruleDeclarations, $rulesData)
+    protected function buildFastParseData($rulesData, $ruleDeclarations)
     {
         $builtFastParseData = $this->getBuiltFastParseDataFromCache($ruleDeclarations);
         if ($builtFastParseData !== false) {
@@ -315,21 +315,26 @@ class UrlManager extends Component
         }
 
         $fastParseData = [];
+        $sizes = [];
 
         /* @var $rule UrlRuleInterface */
         foreach ($rulesData as $key => $rule) {
             if (!method_exists($rule, 'getFastParseData')) {
                 if (!array_key_exists('', $fastParseData)) {
-                    $fastParseData[''] = [];
+                    $sizes[''] = 0;
+                    $fastParseData[''] = new \SplFixedArray();
                 }
-                $fastParseData[''][$key] = null;
+                $fastParseData['']->setSize($sizes[''] + 1);
+                $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
             } else {
                 $data = $rule->getFastParseData();
                 if (!is_array($data)) {
                     if (!array_key_exists('', $fastParseData)) {
-                        $fastParseData[''] = [];
+                        $sizes[''] = 0;
+                        $fastParseData[''] = new \SplFixedArray();
                     }
-                    $fastParseData[''][$key] = null;
+                    $fastParseData['']->setSize($sizes[''] + 1);
+                    $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
                     continue;
                 }
 
@@ -340,12 +345,14 @@ class UrlManager extends Component
                 $pattern = ArrayHelper::getValue($data, 'pattern');
                 if ($pattern === null) {
                     if (!array_key_exists('', $fastParseData)) {
-                        $fastParseData[''] = [];
+                        $sizes[''] = 0;
+                        $fastParseData[''] = new \SplFixedArray();
                     }
-                    $fastParseData[''][$key] = null;
+                    $fastParseData['']->setSize($sizes[''] + 1);
+                    $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
                     continue;
                 }
-                $ruleFastParseData = ['pattern' => $pattern];
+                $ruleFastParseData = ['key' => $key, 'pattern' => $pattern];
                 $suffix = ArrayHelper::getValue($data, 'suffix');
                 if (!empty($suffix)) {
                     $ruleFastParseData['suffix'] = $suffix;
@@ -356,13 +363,20 @@ class UrlManager extends Component
                 }
                 $verbs = ArrayHelper::getValue($data, 'verb', []);
                 if ($verbs === []) {
-                    $fastParseData[''][$key] = $ruleFastParseData;
+                    if (!array_key_exists('', $fastParseData)) {
+                        $sizes[''] = 0;
+                        $fastParseData[''] = new \SplFixedArray(0);
+                    }
+                    $fastParseData['']->setSize($sizes[''] + 1);
+                    $fastParseData[''][$sizes['']++] = $ruleFastParseData;
                 } else {
                     foreach ($verbs as $verb) {
                         if (!array_key_exists($verb, $fastParseData)) {
-                            $fastParseData[$verb] = [];
+                            $sizes[$verb] = 0;
+                            $fastParseData[$verb] = new \SplFixedArray();
                         }
-                        $fastParseData[$verb][$key] = $ruleFastParseData;
+                        $fastParseData[$verb]->setSize($sizes[$verb] + 1);
+                        $fastParseData[$verb][$sizes[$verb]++] = $ruleFastParseData;
                     }
                 }
             }
@@ -503,8 +517,8 @@ class UrlManager extends Component
         $requestPathInfo = $request->getPathInfo();
         $requestHostInfo = strtolower($request->getHostInfo());
 
-        foreach ($fastParseData as $key => $data) {
-            if (is_array($data)) {
+        foreach ($fastParseData as $data) {
+            if (!array_key_exists('pass', $data)) {
                 $suffix = ArrayHelper::getValue($data, 'suffix', '');
                 $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
                 $pathInfo = $requestPathInfo;
@@ -525,8 +539,8 @@ class UrlManager extends Component
                 }
             }
 
-            if (array_key_exists($key, $this->_rules)) {
-                $rule = $this->_rules[$key];
+            if (array_key_exists($data['key'], $this->_rules)) {
+                $rule = $this->_rules[$data['key']];
                 $result = $rule->parseRequest($this, $request);
                 if (YII_DEBUG) {
                     Yii::debug([
