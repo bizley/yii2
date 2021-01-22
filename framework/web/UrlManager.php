@@ -12,7 +12,6 @@ use yii\base\Component;
 use yii\base\InvalidConfigException;
 use yii\caching\CacheInterface;
 use yii\di\Instance;
-use yii\helpers\ArrayHelper;
 use yii\helpers\Url;
 
 /**
@@ -338,11 +337,11 @@ class UrlManager extends Component
                     continue;
                 }
 
-                if ((bool)ArrayHelper::getValue($data, 'skip', false)) {
+                if (isset($data['skip']) && (bool)$data['skip'] === true) {
                     continue;
                 }
 
-                $pattern = ArrayHelper::getValue($data, 'pattern');
+                $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
                 if ($pattern === null) {
                     if (!array_key_exists('', $fastParseData)) {
                         $sizes[''] = 0;
@@ -353,15 +352,13 @@ class UrlManager extends Component
                     continue;
                 }
                 $ruleFastParseData = ['key' => $key, 'pattern' => $pattern];
-                $suffix = ArrayHelper::getValue($data, 'suffix');
-                if (!empty($suffix)) {
-                    $ruleFastParseData['suffix'] = $suffix;
+                if (!empty($data['suffix'])) {
+                    $ruleFastParseData['suffix'] = $data['suffix'];
                 }
-                $host = (bool)ArrayHelper::getValue($data, 'host', false);
-                if ($host) {
+                if (isset($data['host']) && (bool)$data['host'] === true) {
                     $ruleFastParseData['host'] = true;
                 }
-                $verbs = ArrayHelper::getValue($data, 'verb', []);
+                $verbs = !empty($data['verb']) && is_array($data['verb']) ? $data['verb'] : [];
                 if ($verbs === []) {
                     if (!array_key_exists('', $fastParseData)) {
                         $sizes[''] = 0;
@@ -519,7 +516,7 @@ class UrlManager extends Component
 
         foreach ($fastParseData as $data) {
             if (!array_key_exists('pass', $data)) {
-                $suffix = ArrayHelper::getValue($data, 'suffix', '');
+                $suffix = !empty($data['suffix']) ? $data['suffix'] : '';
                 $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
                 $pathInfo = $requestPathInfo;
                 $normalized = false;
@@ -530,10 +527,10 @@ class UrlManager extends Component
                 if ($result === false) {
                     continue;
                 }
-                if ((bool)ArrayHelper::getValue($data, 'host', false)) {
+                if (!empty($data['host']) && (bool)$data['host']) {
                     $pathInfo = $requestHostInfo . ($pathInfo === '' ? '' : '/' . $pathInfo);
                 }
-                $pattern = ArrayHelper::getValue($data, 'pattern');
+                $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
                 if ($pattern === null || !preg_match($pattern, $pathInfo)) {
                     continue;
                 }
