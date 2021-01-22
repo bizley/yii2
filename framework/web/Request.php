@@ -381,6 +381,8 @@ class Request extends \yii\base\Request
         return $this->_headers;
     }
 
+    private $_method;
+
     /**
      * Returns the method of the current request (e.g. GET, POST, HEAD, PUT, PATCH, DELETE).
      * @return string request method, such as GET, POST, HEAD, PUT, PATCH, DELETE.
@@ -388,24 +390,24 @@ class Request extends \yii\base\Request
      */
     public function getMethod()
     {
-        if (
-            isset($_POST[$this->methodParam])
-            // Never allow to downgrade request from WRITE methods (POST, PATCH, DELETE, etc)
-            // to read methods (GET, HEAD, OPTIONS) for security reasons.
-            && !in_array(strtoupper($_POST[$this->methodParam]), ['GET', 'HEAD', 'OPTIONS'], true)
-        ) {
-            return strtoupper($_POST[$this->methodParam]);
+        if ($this->_method === null) {
+            if (
+                isset($_POST[$this->methodParam])
+                // Never allow to downgrade request from WRITE methods (POST, PATCH, DELETE, etc)
+                // to read methods (GET, HEAD, OPTIONS) for security reasons.
+                && !in_array(strtoupper($_POST[$this->methodParam]), ['GET', 'HEAD', 'OPTIONS'], true)
+            ) {
+                $this->_method = strtoupper($_POST[$this->methodParam]);
+            } elseif ($this->headers->has('X-Http-Method-Override')) {
+                $this->_method = strtoupper($this->headers->get('X-Http-Method-Override'));
+            } elseif (isset($_SERVER['REQUEST_METHOD'])) {
+                $this->_method = strtoupper($_SERVER['REQUEST_METHOD']);
+            } else {
+                $this->_method = 'GET';
+            }
         }
 
-        if ($this->headers->has('X-Http-Method-Override')) {
-            return strtoupper($this->headers->get('X-Http-Method-Override'));
-        }
-
-        if (isset($_SERVER['REQUEST_METHOD'])) {
-            return strtoupper($_SERVER['REQUEST_METHOD']);
-        }
-
-        return 'GET';
+        return $this->_method;
     }
 
     /**
@@ -974,7 +976,7 @@ class Request extends \yii\base\Request
             $pathInfo = substr($pathInfo, 1);
         }
 
-        return (string) $pathInfo;
+        return $this->_pathInfo;
     }
 
     /**
@@ -1062,7 +1064,7 @@ class Request extends \yii\base\Request
             throw new InvalidConfigException('Unable to determine the request URI.');
         }
 
-        return $requestUri;
+        return $this->_url;
     }
 
     /**

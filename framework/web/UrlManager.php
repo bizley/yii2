@@ -313,8 +313,11 @@ class UrlManager extends Component
     {
         if ($this->enablePrettyUrl) {
             /* @var $rule UrlRule */
+            $time = 0;
             foreach ($this->rules as $rule) {
+                $step = microtime(true);
                 $result = $rule->parseRequest($this, $request);
+                $time += microtime(true) - $step;
                 if (YII_DEBUG) {
                     Yii::debug([
                         'rule' => method_exists($rule, '__toString') ? $rule->__toString() : get_class($rule),
@@ -326,6 +329,7 @@ class UrlManager extends Component
                     return $result;
                 }
             }
+            var_dump(['avgParseRules' => $time / count($this->rules)]);
 
             if ($this->enableStrictParsing) {
                 return false;

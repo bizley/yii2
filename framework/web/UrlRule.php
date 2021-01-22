@@ -390,7 +390,8 @@ class UrlRule extends BaseObject implements UrlRuleInterface
         $pathInfo = $request->getPathInfo();
         $normalized = false;
         if ($this->hasNormalizer($manager)) {
-            $pathInfo = $this->getNormalizer($manager)->normalizePathInfo($pathInfo, $suffix, $normalized);
+            $normalizer = $this->getNormalizer($manager);
+            $pathInfo = $normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
         }
         if ($suffix !== '' && $pathInfo !== '') {
             $n = strlen($suffix);
@@ -439,7 +440,7 @@ class UrlRule extends BaseObject implements UrlRuleInterface
 
         if ($normalized) {
             // pathInfo was changed by normalizer - we need also normalize route
-            return $this->getNormalizer($manager)->normalizeRoute([$route, $params]);
+            return $normalizer->normalizeRoute([$route, $params]);
         }
 
         return [$route, $params];
