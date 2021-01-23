@@ -234,26 +234,21 @@ class UrlManager extends Component
     /**
      * Adds additional URL rules.
      *
-     * This method will call [[buildRules()]] to parse the given rule declarations and then append or insert
-     * them to the existing [[rules]].
-     *
-     * Note that if [[enablePrettyUrl]] is `false`, this method will do nothing.
-     *
      * @param array $rules the new rules to be added. Each array element represents a single rule declaration.
-     * Please refer to [[rules]] for the acceptable rule format.
+     * Please refer to [[setRules()]] for the acceptable rule format.
      * @param bool $append whether to add the new rules by appending them to the end of the existing rules.
+     * Since 2.0.41 this method does not call [[buildRules()]] anymore and [[enablePrettyUrl]] does not affect it.
      */
     public function addRules($rules, $append = true)
     {
         if (!$this->enablePrettyUrl) {
             return;
         }
-        $rules = $this->buildRules($rules);
-        if ($append) {
-            $this->rules = array_merge($this->rules, $rules);
-        } else {
-            $this->rules = array_merge($rules, $this->rules);
-        }
+        $this->setRules(
+            $append
+            ? array_merge($this->_rulesDeclaration, $rules)
+            : array_merge($rules, $this->_rulesDeclaration)
+        );
     }
 
     /**
@@ -306,6 +301,12 @@ class UrlManager extends Component
         return $builtRules;
     }
 
+    /**
+     * @param array $rulesData
+     * @param array $ruleDeclarations
+     * @return array
+     * @since 2.0.41
+     */
     protected function buildFastParseData($rulesData, $ruleDeclarations)
     {
         $builtFastParseData = $this->getBuiltFastParseDataFromCache($ruleDeclarations);
@@ -314,67 +315,42 @@ class UrlManager extends Component
         }
 
         $fastParseData = [];
-        $sizes = [];
 
         /* @var $rule UrlRuleInterface */
         foreach ($rulesData as $key => $rule) {
             if (!method_exists($rule, 'getFastParseData')) {
-                if (!array_key_exists('', $fastParseData)) {
-                    $sizes[''] = 0;
-                    $fastParseData[''] = new \SplFixedArray();
-                }
-                $fastParseData['']->setSize($sizes[''] + 1);
-                $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
+                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
+                continue;
+            }
+
+            $data = $rule->getFastParseData();
+            if (!is_array($data)) {
+                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
+                continue;
+            }
+
+            if (isset($data['skip']) && (bool)$data['skip'] === true) {
+                continue;
+            }
+
+            $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
+            if ($pattern === null) {
+                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
+                continue;
+            }
+            $ruleFastParseData = ['key' => $key, 'pattern' => $pattern];
+            if (!empty($data['suffix'])) {
+                $ruleFastParseData['suffix'] = $data['suffix'];
+            }
+            if (isset($data['host']) && (bool)$data['host'] === true) {
+                $ruleFastParseData['host'] = true;
+            }
+            $verbs = !empty($data['verb']) && is_array($data['verb']) ? $data['verb'] : [];
+            if ($verbs === []) {
+                $this->addDataEntry($fastParseData, '', $ruleFastParseData);
             } else {
-                $data = $rule->getFastParseData();
-                if (!is_array($data)) {
-                    if (!array_key_exists('', $fastParseData)) {
-                        $sizes[''] = 0;
-                        $fastParseData[''] = new \SplFixedArray();
-                    }
-                    $fastParseData['']->setSize($sizes[''] + 1);
-                    $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
-                    continue;
-                }
-
-                if (isset($data['skip']) && (bool)$data['skip'] === true) {
-                    continue;
-                }
-
-                $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
-                if ($pattern === null) {
-                    if (!array_key_exists('', $fastParseData)) {
-                        $sizes[''] = 0;
-                        $fastParseData[''] = new \SplFixedArray();
-                    }
-                    $fastParseData['']->setSize($sizes[''] + 1);
-                    $fastParseData[''][$sizes['']++] = ['key' => $key, 'pass' => true];
-                    continue;
-                }
-                $ruleFastParseData = ['key' => $key, 'pattern' => $pattern];
-                if (!empty($data['suffix'])) {
-                    $ruleFastParseData['suffix'] = $data['suffix'];
-                }
-                if (isset($data['host']) && (bool)$data['host'] === true) {
-                    $ruleFastParseData['host'] = true;
-                }
-                $verbs = !empty($data['verb']) && is_array($data['verb']) ? $data['verb'] : [];
-                if ($verbs === []) {
-                    if (!array_key_exists('', $fastParseData)) {
-                        $sizes[''] = 0;
-                        $fastParseData[''] = new \SplFixedArray(0);
-                    }
-                    $fastParseData['']->setSize($sizes[''] + 1);
-                    $fastParseData[''][$sizes['']++] = $ruleFastParseData;
-                } else {
-                    foreach ($verbs as $verb) {
-                        if (!array_key_exists($verb, $fastParseData)) {
-                            $sizes[$verb] = 0;
-                            $fastParseData[$verb] = new \SplFixedArray();
-                        }
-                        $fastParseData[$verb]->setSize($sizes[$verb] + 1);
-                        $fastParseData[$verb][$sizes[$verb]++] = $ruleFastParseData;
-                    }
+                foreach ($verbs as $verb) {
+                    $this->addDataEntry($fastParseData, $verb, $ruleFastParseData);
                 }
             }
         }
@@ -382,6 +358,14 @@ class UrlManager extends Component
         $this->setBuiltFastParseDataCache($ruleDeclarations, $fastParseData);
 
         return $fastParseData;
+    }
+
+    private function addDataEntry(&$data, $key, $entry)
+    {
+        if (!array_key_exists($key, $data)) {
+            $data[$key] = [];
+        }
+        $data[$key][] = $entry;
     }
 
     /**
@@ -402,6 +386,12 @@ class UrlManager extends Component
         return $this->cache->set([$this->cacheKey, $this->ruleConfig, $ruleDeclarations], $builtRules);
     }
 
+    /**
+     * @param array $ruleDeclarations
+     * @param array $builtFastParseData
+     * @return bool
+     * @since 2.0.41
+     */
     protected function setBuiltFastParseDataCache($ruleDeclarations, $builtFastParseData)
     {
         if (!$this->cache instanceof CacheInterface) {
@@ -432,6 +422,11 @@ class UrlManager extends Component
         return $this->cache->get([$this->cacheKey, $this->ruleConfig, $ruleDeclarations]);
     }
 
+    /**
+     * @param array $ruleDeclarations
+     * @return array|false
+     * @since 2.0.41
+     */
     protected function getBuiltFastParseDataFromCache($ruleDeclarations)
     {
         if (!$this->cache instanceof CacheInterface) {
@@ -515,7 +510,7 @@ class UrlManager extends Component
         $requestHostInfo = strtolower($request->getHostInfo());
 
         foreach ($fastParseData as $data) {
-            if (!array_key_exists('pass', $data)) {
+            if (!isset($data['pass']) || !(bool)$data['pass']) {
                 $suffix = !empty($data['suffix']) ? $data['suffix'] : '';
                 $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
                 $pathInfo = $requestPathInfo;
@@ -527,11 +522,10 @@ class UrlManager extends Component
                 if ($result === false) {
                     continue;
                 }
-                if (!empty($data['host']) && (bool)$data['host']) {
+                if (isset($data['host']) && (bool)$data['host']) {
                     $pathInfo = $requestHostInfo . ($pathInfo === '' ? '' : '/' . $pathInfo);
                 }
-                $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
-                if ($pattern === null || !preg_match($pattern, $pathInfo)) {
+                if (empty($data['pattern']) || !preg_match($data['pattern'], $pathInfo)) {
                     continue;
                 }
             }
