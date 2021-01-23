@@ -551,9 +551,13 @@ class UrlManager extends Component
 
         foreach ($fastParseData as $data) {
             if (!isset($data['pass']) || !(bool)$data['pass']) {
+                $pathInfo = $requestPathInfo;
+                $required = !empty($data['req']) ? $data['req'] : null;
+                if ($required && strpos($pathInfo, $required) === false) {
+                    continue;
+                }
                 $suffix = !empty($data['suffix']) ? $data['suffix'] : '';
                 $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
-                $pathInfo = $requestPathInfo;
                 $normalized = false;
                 if ($this->normalizer !== false && (!isset($data['norm']) || (bool)$data['norm'])) {
                     $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);

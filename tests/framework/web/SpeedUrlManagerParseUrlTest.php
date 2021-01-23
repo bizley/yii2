@@ -55,17 +55,15 @@ class SpeedUrlManagerParseUrlTest extends UrlManagerParseUrlTest
         $rules = [];
         $charSet = range('a', 'z');
         foreach ($charSet as $c1) {
-            //foreach ($charSet as $c2) {
-                //foreach ($charSet as $c3) {
-                    //foreach ($charSet as $c4) {
-                        $name = $c1;// . $c2 . $c3 . $c4;
-                        $rules[] = [
-                            'class' => 'yii\rest\UrlRule',
-                            'controller' => $name,
-                        ];
-                    //}
-                //}
-            //}
+            foreach ($charSet as $c2) {
+                foreach ($charSet as $c3) {
+                    $name = $c1 . $c2 . $c3;
+                    $rules[] = [
+                        'class' => 'yii\rest\UrlRule',
+                        'controller' => $name,
+                    ];
+                }
+            }
         }
 
         $cache = new ArrayCache();
