@@ -324,7 +324,7 @@ class UrlManager extends Component
             }
 
             $data = $rule->getFastParseData();
-            if (!is_array($data)) {
+            if (!is_array($data) || $data === []) {
                 $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
                 continue;
             }
@@ -333,12 +333,11 @@ class UrlManager extends Component
                 continue;
             }
 
-            $pattern = !empty($data['pattern']) ? $data['pattern'] : null;
-            if ($pattern === null) {
+            if (empty($data['pattern'])) {
                 $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
                 continue;
             }
-            $ruleFastParseData = ['key' => $key, 'pattern' => $pattern];
+            $ruleFastParseData = ['key' => $key, 'pattern' => $data['pattern']];
             if (!empty($data['suffix'])) {
                 $ruleFastParseData['suffix'] = $data['suffix'];
             }
@@ -515,7 +514,7 @@ class UrlManager extends Component
                 $suffix = (string)($suffix === '' ? $this->suffix : $suffix);
                 $pathInfo = $requestPathInfo;
                 $normalized = false;
-                if ($this->normalizer !== false) {
+                if ($this->normalizer !== false && (!isset($data['norm']) || (bool)$data['norm'])) {
                     $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);
                 }
                 $result = $this->fitSuffix($suffix, $pathInfo);
