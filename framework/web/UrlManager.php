@@ -478,9 +478,10 @@ class UrlManager extends Component
     public function parseRequest($request)
     {
         if ($this->enablePrettyUrl) {
+            $pathInfo = $request->getPathInfo();
+
             $fastParseData = $this->getFastParseData();
             if ($fastParseData !== []) {
-                $pathInfo = $request->getPathInfo();
                 $method = $request->getMethod();
 
                 foreach ($fastParseData as $prefix => $data) {
