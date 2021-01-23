@@ -293,13 +293,15 @@ class UrlManager extends Component
                 // rule is object from the beginning
                 $ruleKey = serialize($rule);
             }
-            $builtRules[$ruleKey] = $rule;
+            $builtRules[md5($ruleKey)] = $rule;
         }
 
         $this->setBuiltRulesCache($ruleDeclarations, $builtRules);
 
         return $builtRules;
     }
+
+    private $_buildingFastParseData;
 
     /**
      * @param array $rulesData
@@ -314,57 +316,89 @@ class UrlManager extends Component
             return $builtFastParseData;
         }
 
-        $fastParseData = [];
+        $this->_buildingFastParseData = [];
 
         /* @var $rule UrlRuleInterface */
         foreach ($rulesData as $key => $rule) {
             if (!method_exists($rule, 'getFastParseData')) {
-                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
+                $this->addDataEntry('', ['key' => $key, 'pass' => true]);
                 continue;
             }
 
-            $data = $rule->getFastParseData();
-            if (!is_array($data) || $data === []) {
-                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
-                continue;
-            }
-
-            if (isset($data['skip']) && (bool)$data['skip'] === true) {
-                continue;
-            }
-
-            if (empty($data['pattern'])) {
-                $this->addDataEntry($fastParseData, '', ['key' => $key, 'pass' => true]);
-                continue;
-            }
-            $ruleFastParseData = ['key' => $key, 'pattern' => $data['pattern']];
-            if (!empty($data['suffix'])) {
-                $ruleFastParseData['suffix'] = $data['suffix'];
-            }
-            if (isset($data['host']) && (bool)$data['host'] === true) {
-                $ruleFastParseData['host'] = true;
-            }
-            $verbs = !empty($data['verb']) && is_array($data['verb']) ? $data['verb'] : [];
-            if ($verbs === []) {
-                $this->addDataEntry($fastParseData, '', $ruleFastParseData);
-            } else {
-                foreach ($verbs as $verb) {
-                    $this->addDataEntry($fastParseData, $verb, $ruleFastParseData);
-                }
-            }
+            $this->processFastParseDataSet($key, $rule->getFastParseData());
         }
 
+        $fastParseData = [];
+        // make sure non-prefixed data is last
+        foreach ($this->_buildingFastParseData as $prefix => $data) {
+            if ($prefix !== '') {
+                $fastParseData[$prefix] = $data;
+            }
+        }
+        if (array_key_exists('', $this->_buildingFastParseData)) {
+            $fastParseData[''] = $this->_buildingFastParseData[''];
+        }
         $this->setBuiltFastParseDataCache($ruleDeclarations, $fastParseData);
+        $this->_buildingFastParseData = null;
 
         return $fastParseData;
     }
 
-    private function addDataEntry(&$data, $key, $entry)
+    private function processFastParseDataSet($key, $data, $prefix = '')
     {
-        if (!array_key_exists($key, $data)) {
-            $data[$key] = [];
+        if (!is_array($data) || $data === []) {
+            $this->addDataEntry('', ['key' => $key, 'pass' => true], $prefix);
+            return;
         }
-        $data[$key][] = $entry;
+
+        if (isset($data['skip']) && (bool)$data['skip'] === true) {
+            return;
+        }
+
+        if (!empty($data['prefix'])) {
+            $prefix = $data['prefix'];
+        }
+
+        if (!empty($data['group']) && is_array($data['group'])) {
+            foreach ($data['group'] as $subRuleData) {
+                $this->processFastParseDataSet($key, $subRuleData, $prefix);
+            }
+            return;
+        }
+
+        if (empty($data['pattern'])) {
+            $this->addDataEntry('', ['key' => $key, 'pass' => true], $prefix);
+            return;
+        }
+        $ruleFastParseData = ['key' => $key, 'pattern' => $data['pattern']];
+        if (!empty($data['suffix'])) {
+            $ruleFastParseData['suffix'] = $data['suffix'];
+        }
+        if (isset($data['host']) && (bool)$data['host'] === true) {
+            $ruleFastParseData['host'] = true;
+        }
+        if (!empty($data['req'])) {
+            $ruleFastParseData['req'] = $data['req'];
+        }
+        $verbs = !empty($data['verb']) && is_array($data['verb']) ? $data['verb'] : [];
+        if ($verbs === []) {
+            $this->addDataEntry('', $ruleFastParseData, $prefix);
+        } else {
+            foreach ($verbs as $verb) {
+                $this->addDataEntry($verb, $ruleFastParseData, $prefix);
+            }
+        }
+    }
+
+    private function addDataEntry($key, $entry, $prefix = '')
+    {
+        if (!array_key_exists($prefix, $this->_buildingFastParseData)) {
+            $this->_buildingFastParseData[$prefix] = [];
+        }
+        if (!array_key_exists($key, $this->_buildingFastParseData[$prefix])) {
+            $this->_buildingFastParseData[$prefix][$key] = [];
+        }
+        $this->_buildingFastParseData[$prefix][$key][] = $entry;
     }
 
     /**
@@ -446,18 +480,26 @@ class UrlManager extends Component
         if ($this->enablePrettyUrl) {
             $fastParseData = $this->getFastParseData();
             if ($fastParseData !== []) {
+                $pathInfo = $request->getPathInfo();
                 $method = $request->getMethod();
-                if (array_key_exists($method, $fastParseData)) {
-                    $result = $this->fastParseRequestForRuleSet($fastParseData[$method], $request);
-                    if ($result !== false) {
-                        return $result;
-                    }
-                }
 
-                if (array_key_exists('', $fastParseData)) {
-                    $result = $this->fastParseRequestForRuleSet($fastParseData[''], $request);
-                    if ($result !== false) {
-                        return $result;
+                foreach ($fastParseData as $prefix => $data) {
+                    if ($prefix === '' || strpos($pathInfo . '/', $prefix . '/') === 0) {
+                        // check matching verb data first
+                        if (array_key_exists($method, $data)) {
+                            $result = $this->fastParseRequestForRuleSet($data[$method], $request);
+                            if ($result !== false) {
+                                return $result;
+                            }
+                        }
+
+                        // finally check non-verb data
+                        if (array_key_exists('', $data)) {
+                            $result = $this->fastParseRequestForRuleSet($data[''], $request);
+                            if ($result !== false) {
+                                return $result;
+                            }
+                        }
                     }
                 }
             }
@@ -469,7 +511,6 @@ class UrlManager extends Component
             Yii::debug('No matching URL rules. Using default URL parsing logic.', __METHOD__);
 
             $suffix = (string) $this->suffix;
-            $pathInfo = $request->getPathInfo();
             $normalized = false;
             if ($this->normalizer !== false) {
                 $pathInfo = $this->normalizer->normalizePathInfo($pathInfo, $suffix, $normalized);

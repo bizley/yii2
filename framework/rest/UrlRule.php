@@ -267,4 +267,31 @@ class UrlRule extends CompositeUrlRule
 
         return false;
     }
+
+    /**
+     *
+     * @return array
+     * @since 2.0.41
+     */
+    public function getFastParseData()
+    {
+        $data = ['group' => []];
+        if (!empty($this->prefix)) {
+            $data['prefix'] = $this->prefix;
+        }
+
+        foreach ($this->rules as $urlName => $rules) {
+            foreach ($rules as $rule) {
+                $key = md5(serialize($rule));
+                if (!method_exists($rule, 'getFastParseData')) {
+                    $data['group'][$key] = ['req' => $urlName, 'pass' => true];
+                    continue;
+                }
+
+                $data['group'][$key] = array_merge($rule->getFastParseData(), ['req' => $urlName]);
+            }
+        }
+
+        return $data;
+    }
 }

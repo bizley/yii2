@@ -141,4 +141,19 @@ class GroupUrlRule extends CompositeUrlRule
         $this->createStatus = UrlRule::CREATE_STATUS_ROUTE_MISMATCH;
         return false;
     }
+
+    /**
+     *
+     * @return array
+     * @since 2.0.41
+     */
+    public function getFastParseData()
+    {
+        $data = [];
+        if (!empty($this->prefix)) {
+            $data['prefix'] = $this->prefix;
+        }
+
+        return array_merge(parent::getFastParseData(), $data);
+    }
 }

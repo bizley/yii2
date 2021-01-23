@@ -140,4 +140,26 @@ abstract class CompositeUrlRule extends BaseObject implements UrlRuleInterface
     {
         return $this->createStatus;
     }
+
+    /**
+     *
+     * @return array
+     * @since 2.0.41
+     */
+    public function getFastParseData()
+    {
+        $data = ['group' => []];
+
+        foreach ($this->rules as $rule) {
+            $key = md5(serialize($rule));
+            if (!method_exists($rule, 'getFastParseData')) {
+                $data['group'][$key] = [];
+                continue;
+            }
+
+            $data['group'][$key] = $rule->getFastParseData();
+        }
+
+        return $data;
+    }
 }
