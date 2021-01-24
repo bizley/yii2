@@ -124,6 +124,46 @@ class SpeedUrlManagerParseUrlTest extends UrlManagerParseUrlTest
         $this->assertEquals(['site/index', []], $result);
     }
 
+    public function testRestSingleSpeed()
+    {
+        $cache = new ArrayCache();
+
+        $step = microtime(true);
+        $manager = $this->getUrlManager([
+                                            'rules' => [
+                                                [
+                                                    'class' => 'yii\rest\UrlRule',
+                                                    'controller' => 'test',
+                                                ]
+                                            ],
+                                            'cache' => $cache,
+                                        ]);
+        $manager->getFastParseData();
+        var_dump(['init+cache' => microtime(true) - $step]);
+
+
+        $time = 0;
+        $i = 0;
+        $count = 100000;
+        while ($i < $count) {
+            $manager = $this->getUrlManager(
+                [
+                    'rules' => [[
+                        'class' => 'yii\rest\UrlRule',
+                        'controller' => 'test',
+                    ]],
+                    'cache' => $cache,
+                ]
+            );
+            $step = microtime(true);
+            $manager->parseRequest($this->getRequest('site/index'));
+            $time += microtime(true) - $step;
+            $i++;
+        }
+
+        var_dump(['avg.parse' => $time / $count]);
+    }
+
     public function testGroupSpeed()
     {
         $rules = [];
@@ -165,5 +205,45 @@ class SpeedUrlManagerParseUrlTest extends UrlManagerParseUrlTest
         $result = $manager->parseRequest($this->getRequest('site/index'));
         var_dump(['parsed' => microtime(true) - $step]);
         $this->assertEquals(['site/index', []], $result);
+    }
+
+    public function testGroupSingleSpeed()
+    {
+        $cache = new ArrayCache();
+
+        $step = microtime(true);
+        $manager = $this->getUrlManager([
+                                            'rules' => [
+                                                [
+                                                    'class' => 'yii\web\GroupUrlRule',
+                                                    'rules' => ['test' => 'test/view'],
+                                                ]
+                                            ],
+                                            'cache' => $cache,
+                                        ]);
+        $manager->getFastParseData();
+        var_dump(['init+cache' => microtime(true) - $step]);
+
+
+        $time = 0;
+        $i = 0;
+        $count = 100000;
+        while ($i < $count) {
+            $manager = $this->getUrlManager(
+                [
+                    'rules' => [[
+                        'class' => 'yii\web\GroupUrlRule',
+                        'rules' => ['test' => 'test/view'],
+                    ]],
+                    'cache' => $cache,
+                ]
+            );
+            $step = microtime(true);
+            $manager->parseRequest($this->getRequest('site/index'));
+            $time += microtime(true) - $step;
+            $i++;
+        }
+
+        var_dump(['avg.parse' => $time / $count]);
     }
 }
